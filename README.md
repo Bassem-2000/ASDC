@@ -1,4 +1,0 @@
-# ASDC
-h
-hghjfj
-kgg
