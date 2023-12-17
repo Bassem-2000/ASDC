@@ -8,6 +8,8 @@ from Architecture import anti_spoofing
 import requests
 from PIL import Image
 from io import BytesIO
+import glob
+import json
 
 
 def load_model():
@@ -58,23 +60,42 @@ def predict(face_tensor):
     value = result[0][label]
     return label, value
 
-def loading_data(token):
-    api = 'http://35.178.6.126:4000/asdc-client-staff/get-all-staff'
-    response = requests.get(api, headers={'Authorization':f'Bearer {token}'})
+def loading_data(token, asdc_client_service_id):
+    api = 'http://35.178.6.126:4000/asdc-client-staff/get-all-staff-for-ai'
+
+    response = requests.get(api, headers={'Authorization':f'Bearer {token}'},params={'service_id':asdc_client_service_id})
     content = response.json()['data']
-    i = content[0]['asdc_client_id']
-    if f'known_face_encodings_{i}' not in globals():
+    if content ==[]:
+        return "NO_one",0,0,0
+    name_file = f"_{content[0]['asdc_client_id']}_{asdc_client_service_id}"
+    json_file_path = f'json/json_{name_file}.json'
+    if f'json\\json_{name_file}.json' not in glob.glob("json/*.json"):
         
-        globals()[f"known_face_encodings_{i}"] = []
-        globals()[f"known_face_names_{i}"] = []
-        globals()[f"qr_codes_{i}"] = []
-        globals()[f"img_url_{i}"] = []
+
+        known_face_encodings = []
+        known_face_names = []
+        qr_codes = []
+        img_url = []
+
+        data = {"known_face_encodings": known_face_encodings, "known_face_names": known_face_names,"qr_codes": qr_codes,"img_url": img_url}
+
+        with open(json_file_path, 'w') as json_file:
+            json.dump(data, json_file)
+    
+    with open(json_file_path, 'r') as file:
+        data = json.load(file)  
+    known_face_encodings = data['known_face_encodings']
+    known_face_names = data['known_face_names']        
+    qr_codes = data["qr_codes"]
+    img_urls = data["img_url"]
         
     for x in content:
         qr = x['asdc_client_staff_qrcode']
         name = x['asdc_client_staff_name']
         image_url = x['asdc_client_profile_pic_url']
-        if qr not in globals()[f"qr_codes_{i}"]:
+
+        if qr not in qr_codes:
+
 
             try:
                 response = requests.get(image_url)              
@@ -82,42 +103,49 @@ def loading_data(token):
                 image = np.array(image.convert("RGB"))
                 locations = face_recognition.face_locations(image)
                 face_encoding = face_recognition.face_encodings(image, known_face_locations=locations)[0]
-                globals()[f"known_face_encodings_{i}"].append(face_encoding)
-                globals()[f"known_face_names_{i}"].append(name)
-                globals()[f"qr_codes_{i}"].append(qr)
-                globals()[f"img_url_{i}"].append(image_url)
+                known_face_encodings.append(face_encoding.tolist())
+                known_face_names.append(name)
+                qr_codes.append(qr)
+                img_urls.append(image_url)
             except Exception as e:
                 print(f"The image doesn't contain face: {image_url}")
 
         else:
-            index = globals()[f"qr_codes_{i}"].index(qr)
-            if name != globals()[f"known_face_names_{i}"][index]:
+            index = qr_codes.index(qr)
+            if name != known_face_names[index]:
                 
-                globals()[f"known_face_names_{i}"][index] = name
+                known_face_names[index] = name
 
-            if image_url !=  globals()[f"img_url_{i}"][index]:
+            if image_url !=  img_urls[index]:
                 try: 
-                    globals()[f"img_url_{i}"][index] = image_url
+                    img_urls[index] = image_url
                     response = requests.get(image_url)              
                     image = Image.open(BytesIO(response.content))
                     image = np.array(image.convert("RGB"))
                     locations = face_recognition.face_locations(image)
                     face_encoding = face_recognition.face_encodings(image, known_face_locations=locations)[0]
-                    globals()[f"known_face_encodings_{i}"][index] = face_encoding
+                    known_face_encodings[index] = face_encoding.tolist()
                 except:
                     print(f"The image doesn't contain face: {image_url}")
                
+    data = {"known_face_encodings": known_face_encodings, "known_face_names": known_face_names,"qr_codes": qr_codes,"img_url": img_urls}
+
+    with open(json_file_path, 'w') as json_file:
+        json.dump(data, json_file)
 
 
 
+    return known_face_encodings, known_face_names, qr_codes, img_urls
 
-    return globals()[f"known_face_encodings_{i}"], globals()[f"known_face_names_{i}"], globals()[f"qr_codes_{i}"], globals()[f"img_url_{i}"]
-
-def classify_image(image, token):
-    known_faces, known_names, qr_codes, img_urls = loading_data(token)
+def classify_image(image, token, asdc_client_service_id):
+    known_faces, known_names, qr_codes, img_urls = loading_data(token,asdc_client_service_id)
+    if known_faces =="NO_one":
+        return "NO_one","NO_one","NO_one"
+    
     locations = face_recognition.face_locations(image)
     faces = face_recognition.face_encodings(image, locations)
     result_text = ""
+    QRcode, img_url = None, None
 
     for face, location in zip(faces, locations):
         y_min, x_max, y_max, x_min = location

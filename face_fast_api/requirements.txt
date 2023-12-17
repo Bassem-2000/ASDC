@@ -1,0 +1,11 @@
+cmake
+dlib
+numpy
+scipy
+opencv-python
+face_recognition
+fastapi
+uvicorn
+python-multipart
+torch
+torchvision
